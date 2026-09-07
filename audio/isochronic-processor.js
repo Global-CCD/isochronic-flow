@@ -1,11 +1,34 @@
 class IsochronicProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'carrierFreq', defaultValue: 200, minValue: 50, maxValue: 1000 },
-      { name: 'pulseRate', defaultValue: 10, minValue: 0.1, maxValue: 40 },
-      { name: 'dutyCycle', defaultValue: 0.5, minValue: 0.05, maxValue: 0.95 },
-      { name: 'steepness', defaultValue: 15, minValue: 1, maxValue: 50 },
-      { name: 'volume', defaultValue: 0.5, minValue: 0, maxValue: 1 }
+      {
+        name: "carrierFreq",
+        defaultValue: 200,
+        minValue: 20,
+        maxValue: 1000,
+        automationRate: "a-rate"
+      },
+      {
+        name: "pulseRate",
+        defaultValue: 10,
+        minValue: 0.1,
+        maxValue: 40,
+        automationRate: "a-rate"
+      },
+      {
+        name: "dutyCycle",
+        defaultValue: 0.5,
+        minValue: 0.05,
+        maxValue: 0.95,
+        automationRate: "k-rate"
+      },
+      {
+        name: "attackRatio",
+        defaultValue: 0.18,
+        minValue: 0.01,
+        maxValue: 0.49,
+        automationRate: "k-rate"
+      }
     ];
   }
 
@@ -17,58 +40,91 @@ class IsochronicProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs, parameters) {
     const output = outputs[0];
-    const channel = output[0];
+    if (!output || !output.length) return true;
+
+    const left = output[0];
+    if (!left) return true;
+
+    const right = output.length > 1 ? output[1] : null;
+
     const sampleRate = globalThis.sampleRate;
+    const twoPi = Math.PI * 2;
 
-    // Parameter arrays (k-rate or a-rate)
-    const carrier = parameters.carrierFreq;
-    const pulse = parameters.pulseRate;
-    const duty = parameters.dutyCycle;
-    const steep = parameters.steepness;
-    const vol = parameters.volume;
+    const carrierParam = parameters.carrierFreq;
+    const pulseParam = parameters.pulseRate;
+    const dutyParam = parameters.dutyCycle;
+    const attackParam = parameters.attackRatio;
 
-    for (let i = 0; i < channel.length; ++i) {
-      const cFreq = carrier.length > 1 ? carrier[i] : carrier[0];
-      const pFreq = pulse.length > 1 ? pulse[i] : pulse[0];
-      const dty = duty.length > 1 ? duty[i] : duty[0];
-      const stp = steep.length > 1 ? steep[i] : steep[0];
-      const v = vol.length > 1 ? vol[i] : vol[0];
+    const carrierIsConstant = carrierParam.length === 1;
+    const pulseIsConstant = pulseParam.length === 1;
+    const dutyIsConstant = dutyParam.length === 1;
+    const attackIsConstant = attackParam.length === 1;
 
-      // 1. Carrier Wave (Sine)
-      this.carrierPhase += (2 * Math.PI * cFreq) / sampleRate;
-      if (this.carrierPhase > 2 * Math.PI) this.carrierPhase -= 2 * Math.PI;
-      const carrierSample = Math.sin(this.carrierPhase);
+    const fixedCarrier = carrierIsConstant ? carrierParam[0] : 0;
+    const fixedPulse = pulseIsConstant ? pulseParam[0] : 0;
+    const fixedDuty = dutyIsConstant ? dutyParam[0] : 0;
+    const fixedAttack = attackIsConstant ? attackParam[0] : 0;
 
-      // 2. Pulse Envelope (True Clinical Trapezoidal/Raised Cosine)
-      this.pulsePhase += (2 * Math.PI * pFreq) / sampleRate;
-      if (this.pulsePhase > 2 * Math.PI) this.pulsePhase -= 2 * Math.PI;
+    for (let i = 0; i < left.length; i++) {
+      const carrierFreq = carrierIsConstant ? fixedCarrier : carrierParam[i];
+      const pulseRate = pulseIsConstant ? fixedPulse : pulseParam[i];
+      const duty = dutyIsConstant ? fixedDuty : dutyParam[i];
+      const attackRatio = attackIsConstant ? fixedAttack : attackParam[i];
 
-      const normPhase = this.pulsePhase / (2 * Math.PI);
-      let envelope = 0;
-
-      // Enforce 100% Depth: Absolute silence when outside duty cycle
-      if (normPhase < dty) {
-        // Normalize phase within the active duty cycle (0.0 to 1.0)
-        const localPos = normPhase / dty;
-        
-        // Smooth raised cosine (0 -> 1 -> 0)
-        const rawEnv = Math.sin(localPos * Math.PI);
-        
-        // Apply steepness (High steepness = flatter top, sharper attack/decay)
-        // 1/stp creates a square-like clinical pulse
-        envelope = Math.pow(rawEnv, 1 / stp);
+      // Carrier phase accumulation.
+      this.carrierPhase += (twoPi * carrierFreq) / sampleRate;
+      while (this.carrierPhase >= twoPi) {
+        this.carrierPhase -= twoPi;
+      }
+      while (this.carrierPhase < 0) {
+        this.carrierPhase += twoPi;
       }
 
-      channel[i] = carrierSample * envelope * v;
+      // Pulse phase accumulation.
+      this.pulsePhase += (twoPi * pulseRate) / sampleRate;
+      while (this.pulsePhase >= twoPi) {
+        this.pulsePhase -= twoPi;
+      }
+      while (this.pulsePhase < 0) {
+        this.pulsePhase += twoPi;
+      }
+
+      const pulsePosition = this.pulsePhase / twoPi;
+
+      let envelope = 0;
+
+      // True clinical isochronic behavior:
+      // 100% modulation depth with complete silence outside the duty window.
+      if (pulsePosition < duty) {
+        const x = duty > 0 ? pulsePosition / duty : 0;
+
+        // Clamp attack/release to avoid overlapping regions.
+        const attack = Math.min(0.49, Math.max(0.01, attackRatio));
+        const releaseStart = 1 - attack;
+
+        if (x < attack) {
+          // Raised-cosine attack.
+          // First derivative is zero at x = 0.
+          envelope = 0.5 * (1 - Math.cos((Math.PI * x) / attack));
+        } else if (x > releaseStart) {
+          // Raised-cosine release.
+          // First derivative is zero at x = 1.
+          envelope = 0.5 * (1 - Math.cos((Math.PI * (1 - x)) / attack));
+        } else {
+          // Flat top.
+          envelope = 1;
+        }
+      }
+
+      left[i] = Math.sin(this.carrierPhase) * envelope;
     }
 
-    // Duplicate left channel to right for stereo output
-    if (output.length > 1) {
-      output[1].set(channel);
+    if (right) {
+      right.set(left);
     }
 
     return true;
   }
 }
 
-registerProcessor('isochronic-processor', IsochronicProcessor);
+registerProcessor("isochronic-processor", IsochronicProcessor);

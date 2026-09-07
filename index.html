@@ -1,64 +1,213 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Isochronic Flow | Clinical Pulse Generator</title>
-  <link rel="stylesheet" href="css/styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Isochronic Flow v2</title>
+
+  <!-- Prevent favicon request from becoming a cross-origin/resource issue -->
+  <link rel="icon" href="data:," />
+
+  <!-- Local stylesheet only. No fonts.css. No remote fonts. -->
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <div class="app-container">
-    <header>
+  <main class="app">
+    <header class="header">
       <h1>Isochronic Flow</h1>
-      <p class="subtitle">True Clinical Isochronic Pulse Generator</p>
+      <p class="subtitle">True Clinical Isochronic Pulse Engine v2</p>
+      <p id="status" class="status" role="status" aria-live="polite">Ready</p>
     </header>
 
-    <div class="visualizer-container">
-      <canvas id="visualizer"></canvas>
-    </div>
+    <section class="panel visualizer-panel" aria-label="Pulse visualizer">
+      <canvas id="visualizer" aria-label="Isochronic pulse visualizer"></canvas>
+      <div id="timer" class="timer" aria-live="polite">Manual</div>
+    </section>
 
-    <div class="controls-panel">
-      <div class="control-group">
-        <label for="carrierFreq">Carrier Freq (<span id="carrierVal">200</span> Hz)</label>
-        <input type="range" id="carrierFreq" min="50" max="1000" value="200" step="1">
+    <section class="panel transport-panel" aria-label="Transport">
+      <button id="playBtn" class="btn-primary" type="button">Start Session</button>
+
+      <div class="control-grid">
+        <div class="control">
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="manual">Manual</option>
+            <option value="descent">Descent</option>
+          </select>
+        </div>
+
+        <div class="control" id="outputGroup">
+          <label for="outputDevice">Sound Output</label>
+          <select id="outputDevice">
+            <option value="default">Default System Output</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel controls-panel" aria-label="Pulse controls">
+      <div class="control-grid">
+        <div class="control">
+          <label for="carrierFreq">
+            Carrier Frequency
+            <span id="carrierVal">200</span> Hz
+          </label>
+          <input id="carrierFreq" type="range" min="50" max="1000" step="1" value="200" />
+        </div>
+
+        <div class="control">
+          <label for="dutyCycle">
+            Duty Cycle
+            <span id="dutyVal">50</span>%
+          </label>
+          <input id="dutyCycle" type="range" min="5" max="95" step="1" value="50" />
+        </div>
+
+        <div class="control">
+          <label for="volume">
+            Master Volume
+            <span id="volVal">55</span>%
+          </label>
+          <input id="volume" type="range" min="0" max="100" step="1" value="55" />
+        </div>
       </div>
 
-      <div class="control-group">
-        <label for="pulseRate">Pulse Rate (<span id="pulseVal">10.0</span> Hz)</label>
-        <input type="range" id="pulseRate" min="0.5" max="40" value="10" step="0.1">
+      <div id="manualControls" class="subpanel">
+        <h2>Manual Pulse</h2>
+        <div class="control">
+          <label for="pulseRate">
+            Pulse Rate
+            <span id="pulseVal">10.0</span> Hz
+          </label>
+          <input id="pulseRate" type="range" min="0.5" max="40" step="0.1" value="10" />
+        </div>
       </div>
 
-      <div class="control-group">
-        <label for="dutyCycle">Duty Cycle (<span id="dutyVal">50</span>%)</label>
-        <input type="range" id="dutyCycle" min="5" max="95" value="50" step="1">
+      <div id="descentControls" class="subpanel hidden">
+        <h2>Descent Mode</h2>
+
+        <div class="control-grid">
+          <div class="control">
+            <label for="descentStart">
+              Start Pulse
+              <span id="descentStartVal">12.0</span> Hz
+            </label>
+            <input id="descentStart" type="range" min="0.5" max="40" step="0.1" value="12" />
+          </div>
+
+          <div class="control">
+            <label for="descentEnd">
+              Target Pulse
+              <span id="descentEndVal">4.0</span> Hz
+            </label>
+            <input id="descentEnd" type="range" min="0.5" max="40" step="0.1" value="4" />
+          </div>
+
+          <div class="control">
+            <label for="descentDuration">
+              Duration
+              <span id="descentDurationVal">15</span> min
+            </label>
+            <input id="descentDuration" type="range" min="1" max="120" step="1" value="15" />
+          </div>
+
+          <div class="control">
+            <label for="curve">Curve</label>
+            <select id="curve">
+              <option value="linear">Linear</option>
+              <option value="exponential">Exponential</option>
+              <option value="smooth" selected>Smooth Step</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel layers-panel" aria-label="Optional layers">
+      <h2>Optional Layers</h2>
+      <p class="note">
+        Optional layers are disabled by default to preserve pure clinical pulse output.
+      </p>
+
+      <div class="control-grid">
+        <div class="control">
+          <label class="checkbox">
+            <input id="harmonicEnabled" type="checkbox" />
+            Harmonic Isochronic Layer
+          </label>
+        </div>
+
+        <div class="control">
+          <label for="harmonicCarrierRatio">Harmonic Carrier</label>
+          <select id="harmonicCarrierRatio">
+            <option value="1">Same</option>
+            <option value="2" selected>2x Carrier</option>
+            <option value="3">3x Carrier</option>
+          </select>
+        </div>
+
+        <div class="control">
+          <label for="harmonicPulseRatio">Harmonic Pulse</label>
+          <select id="harmonicPulseRatio">
+            <option value="1" selected>Same Pulse</option>
+            <option value="0.5">Half Pulse</option>
+            <option value="2">Double Pulse</option>
+          </select>
+        </div>
+
+        <div class="control">
+          <label for="harmonicLevel">
+            Harmonic Level
+            <span id="harmonicLevelVal">22</span>%
+          </label>
+          <input id="harmonicLevel" type="range" min="0" max="100" step="1" value="22" />
+        </div>
       </div>
 
-      <div class="control-group">
-        <label for="volume">Volume (<span id="volVal">50</span>%)</label>
-        <input type="range" id="volume" min="0" max="100" value="50" step="1">
-      </div>
-      
-      <div class="control-group">
-        <label for="outputDevice">Sound Output</label>
-        <select id="outputDevice">
-          <option value="default">Default System Output</option>
-        </select>
-      </div>
-    </div>
+      <div class="control-grid">
+        <div class="control">
+          <label class="checkbox">
+            <input id="noiseEnabled" type="checkbox" />
+            Ambient Masking Noise
+          </label>
+        </div>
 
-    <div class="presets-panel">
-      <h3>Clinical Presets</h3>
+        <div class="control">
+          <label for="noiseType">Noise Type</label>
+          <select id="noiseType">
+            <option value="pink">Pink</option>
+            <option value="brown" selected>Brown</option>
+          </select>
+        </div>
+
+        <div class="control">
+          <label for="noiseLevel">
+            Noise Level
+            <span id="noiseLevelVal">18</span>%
+          </label>
+          <input id="noiseLevel" type="range" min="0" max="100" step="1" value="18" />
+        </div>
+      </div>
+    </section>
+
+    <section class="panel presets-panel" aria-label="Presets">
+      <h2>Clinical Presets</h2>
+
       <div class="preset-buttons">
-        <button class="preset-btn" data-preset="focus">Deep Focus (14Hz)</button>
-        <button class="preset-btn" data-preset="calm">Calm Descent (10Hz)</button>
-        <button class="preset-btn" data-preset="sleep">Delta Sleep (2Hz)</button>
-      </div>
-    </div>
+        <button class="preset-btn" type="button" data-preset="focus">
+          Deep Focus
+        </button>
 
-    <div class="action-panel">
-      <button id="playBtn" class="btn-primary">Start Session</button>
-    </div>
-  </div>
+        <button class="preset-btn" type="button" data-preset="calm">
+          Wind Down
+        </button>
+
+        <button class="preset-btn" type="button" data-preset="sleep">
+          Deep Sleep Descent
+        </button>
+      </div>
+    </section>
+  </main>
 
   <script src="js/presets.js"></script>
   <script src="js/visualizer.js"></script>

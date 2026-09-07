@@ -1,79 +1,171 @@
-let canvas, ctx, animationId;
-let vizParams = { pulseRate: 10, dutyCycle: 0.5 };
+let vizCanvas = null;
+let vizCtx = null;
+let vizRaf = null;
+let vizLastTime = 0;
+let vizPhase = 0;
+let vizGetState = null;
 
-function initVisualizer(canvasEl) {
-  canvas = canvasEl;
-  ctx = canvas.getContext('2d');
-  resizeCanvas();
-  window.addEventListener('resize', resizeCanvas);
-  drawStatic();
+function initVisualizer(canvasElement, stateGetter) {
+  vizCanvas = canvasElement;
+  vizGetState = stateGetter;
+
+  if (!vizCanvas) return;
+
+  vizCtx = vizCanvas.getContext("2d");
+
+  resizeVisualizer();
+  window.addEventListener("resize", resizeVisualizer);
+
+  drawIdle();
 }
 
-function resizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * window.devicePixelRatio;
-  canvas.height = rect.height * window.devicePixelRatio;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+function resizeVisualizer() {
+  if (!vizCanvas) return;
+
+  const rect = vizCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  vizCanvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  vizCanvas.height = Math.max(1, Math.floor(rect.height * dpr));
+
+  vizCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function updateVisualizerParams(params) {
-  Object.assign(vizParams, params);
+function startVisualizer() {
+  if (!vizCtx || vizRaf) return;
+
+  vizLastTime = performance.now();
+  vizRaf = requestAnimationFrame(visualizerFrame);
 }
 
-function drawStatic() {
-  if (!ctx) return;
-  const w = canvas.width / window.devicePixelRatio;
-  const h = canvas.height / window.devicePixelRatio;
-  ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-  ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
-}
-
-function draw() {
-  if (!ctx) return;
-  const w = canvas.width / window.devicePixelRatio;
-  const h = canvas.height / window.devicePixelRatio;
-  
-  ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
-
-  const pulsesToShow = 4;
-  const cycleWidth = w / pulsesToShow;
-  const duty = vizParams.dutyCycle || 0.5;
-  
-  ctx.lineWidth = 2;
-  ctx.shadowBlur = 10;
-  ctx.shadowColor = '#00d2ff';
-  ctx.strokeStyle = '#00d2ff';
-  ctx.beginPath();
-  
-  for (let x = 0; x <= w; x++) {
-    const cyclePos = (x % cycleWidth) / cycleWidth;
-    let y = h / 2;
-    
-    if (cyclePos < duty) {
-      const localPos = cyclePos / duty;
-      const env = Math.sin(localPos * Math.PI); 
-      const steepEnv = Math.pow(env, 0.5); // Visual steepness
-      y = (h / 2) - (steepEnv * (h / 2 - 10));
-    }
-    
-    if (x === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-  animationId = requestAnimationFrame(draw);
-}
-
-function startVisualizer() { if (!animationId) draw(); }
 function stopVisualizer() {
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
-    drawStatic();
+  if (vizRaf) {
+    cancelAnimationFrame(vizRaf);
+    vizRaf = null;
   }
+
+  drawIdle();
+}
+
+function visualizerFrame(now) {
+  const state = vizGetState ? vizGetState() : null;
+
+  if (!state) {
+    drawIdle();
+    return;
+  }
+
+  const dt = Math.min(0.1, (now - vizLastTime) / 1000);
+  vizLastTime = now;
+
+  if (state.playing && state.rate > 0) {
+    vizPhase += dt * state.rate;
+    vizPhase %= 1;
+  }
+
+  drawPulse(state);
+
+  vizRaf = requestAnimationFrame(visualizerFrame);
+}
+
+function clinicalEnvelope(phase, duty) {
+  const attack = 0.18;
+
+  if (phase >= duty) {
+    return 0;
+  }
+
+  const x = duty > 0 ? phase / duty : 0;
+
+  if (x < attack) {
+    return 0.5 * (1 - Math.cos((Math.PI * x) / attack));
+  }
+
+  if (x > 1 - attack) {
+    return 0.5 * (1 - Math.cos((Math.PI * (1 - x)) / attack));
+  }
+
+  return 1;
+}
+
+function drawPulse(state) {
+  if (!vizCtx || !vizCanvas) return;
+
+  const rect = vizCanvas.getBoundingClientRect();
+  const w = rect.width;
+  const h = rect.height;
+
+  vizCtx.clearRect(0, 0, w, h);
+
+  const cx = w / 2;
+  const cy = h / 2;
+
+  const env = clinicalEnvelope(vizPhase, state.duty);
+
+  const minDimension = Math.min(w, h);
+  const baseRadius = minDimension * 0.14;
+  const pulseRadius = baseRadius + env * minDimension * 0.23;
+
+  // Background reference ring.
+  vizCtx.beginPath();
+  vizCtx.arc(cx, cy, baseRadius, 0, Math.PI * 2);
+  vizCtx.strokeStyle = "rgba(255,255,255,0.08)";
+  vizCtx.lineWidth = 1;
+  vizCtx.stroke();
+
+  // Active pulse ring.
+  vizCtx.beginPath();
+  vizCtx.arc(cx, cy, pulseRadius, 0, Math.PI * 2);
+  vizCtx.strokeStyle = `rgba(53, 214, 255, ${0.18 + env * 0.82})`;
+  vizCtx.lineWidth = 2 + env * 7;
+  vizCtx.shadowColor = "rgba(53, 214, 255, 0.55)";
+  vizCtx.shadowBlur = 18 * env;
+  vizCtx.stroke();
+  vizCtx.shadowBlur = 0;
+
+  // Center dot.
+  vizCtx.beginPath();
+  vizCtx.arc(cx, cy, 3 + env * 4, 0, Math.PI * 2);
+  vizCtx.fillStyle = `rgba(255,255,255,${0.25 + env * 0.75})`;
+  vizCtx.fill();
+
+  // Text.
+  vizCtx.fillStyle = "rgba(232,237,243,0.72)";
+  vizCtx.font = "12px ui-sans-serif, system-ui, sans-serif";
+  vizCtx.textAlign = "center";
+  vizCtx.fillText(
+    `${state.rate.toFixed(2)} Hz | duty ${(state.duty * 100).toFixed(0)}%`,
+    cx,
+    h - 16
+  );
+}
+
+function drawIdle() {
+  if (!vizCtx || !vizCanvas) return;
+
+  const rect = vizCanvas.getBoundingClientRect();
+  const w = rect.width;
+  const h = rect.height;
+
+  vizCtx.clearRect(0, 0, w, h);
+
+  const cx = w / 2;
+  const cy = h / 2;
+  const radius = Math.min(w, h) * 0.14;
+
+  vizCtx.beginPath();
+  vizCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+  vizCtx.strokeStyle = "rgba(255,255,255,0.10)";
+  vizCtx.lineWidth = 1.5;
+  vizCtx.stroke();
+
+  vizCtx.beginPath();
+  vizCtx.arc(cx, cy, 3, 0, Math.PI * 2);
+  vizCtx.fillStyle = "rgba(255,255,255,0.25)";
+  vizCtx.fill();
+
+  vizCtx.fillStyle = "rgba(232,237,243,0.45)";
+  vizCtx.font = "12px ui-sans-serif, system-ui, sans-serif";
+  vizCtx.textAlign = "center";
+  vizCtx.fillText("Stopped", cx, h - 16);
 }
