@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Isochronic Flow | Clinical Pulse Generator</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <header>
+      <h1>Isochronic Flow</h1>
+      <p class="subtitle">True Clinical Isochronic Pulse Generator</p>
+    </header>
+
+    <div class="visualizer-container">
+      <canvas id="visualizer"></canvas>
+    </div>
+
+    <div class="controls-panel">
+      <div class="control-group">
+        <label for="carrierFreq">Carrier Freq (<span id="carrierVal">200</span> Hz)</label>
+        <input type="range" id="carrierFreq" min="50" max="1000" value="200" step="1">
+      </div>
+
+      <div class="control-group">
+        <label for="pulseRate">Pulse Rate (<span id="pulseVal">10.0</span> Hz)</label>
+        <input type="range" id="pulseRate" min="0.5" max="40" value="10" step="0.1">
+      </div>
+
+      <div class="control-group">
+        <label for="dutyCycle">Duty Cycle (<span id="dutyVal">50</span>%)</label>
+        <input type="range" id="dutyCycle" min="5" max="95" value="50" step="1">
+      </div>
+
+      <div class="control-group">
+        <label for="volume">Volume (<span id="volVal">50</span>%)</label>
+        <input type="range" id="volume" min="0" max="100" value="50" step="1">
+      </div>
+      
+      <div class="control-group">
+        <label for="outputDevice">Sound Output</label>
+        <select id="outputDevice">
+          <option value="default">Default System Output</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="presets-panel">
+      <h3>Clinical Presets</h3>
+      <div class="preset-buttons">
+        <button class="preset-btn" data-preset="focus">Deep Focus (14Hz)</button>
+        <button class="preset-btn" data-preset="calm">Calm Descent (10Hz)</button>
+        <button class="preset-btn" data-preset="sleep">Delta Sleep (2Hz)</button>
+      </div>
+    </div>
+
+    <div class="action-panel">
+      <button id="playBtn" class="btn-primary">Start Session</button>
+    </div>
+  </div>
+
+  <script src="js/presets.js"></script>
+  <script src="js/visualizer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
